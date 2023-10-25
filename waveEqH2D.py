@@ -124,7 +124,6 @@ def calcEpsxy(xmin, xmax, ymin, ymax, N, plot=False):
         plt.show()
         plt.close()
     return epsxy(xe, ye)
-    #return np.ones((N,N))
 
 def waveEqSolve2D(N, L, Tf):
     """
@@ -166,8 +165,6 @@ def waveEqSolve2D(N, L, Tf):
     E_curk = E_oldk + dt*sfft.fft2(V_0)
     E_newk = E_newk = np.zeros((N1,N2))
 
-    #q2 = ((dt**2)/(u_0*eps_0))*(np.power(k1, 2) + np.power(k2, 2))
-
     for tt in np.arange(N_t):
         #Verlet
         if tt > 1:
@@ -182,37 +179,12 @@ def waveEqSolve2D(N, L, Tf):
 def main():
     L = 2.0*PI
     N1 = N2 = 256 #Assume N1 = N2 in 2D FFT
-    h = L/N1
-    k_neg = np.arange(-N1//2 + 1,0,1)
-    k_pos = np.concatenate((np.arange(N1//2), np.array([0])))
-    kk = np.concatenate((k_pos, k_neg))
-    #k1, k2 = np.meshgrid(kk,kk, indexing='ij')
     f1 = 1.0/(4.0*PI*np.sqrt(eps_0*u_0))
     Tf = 1.0/(PI*f1)
 
     #Initial Condition
-    xc = h*np.arange(N1) + 0.5*h
-    yc = h*np.arange(N2) + 0.5*h
-    x, y = np.meshgrid(xc, yc, indexing='ij')
-    #E_0 = np.exp(-10.0*(np.power(x - PI, 2) + np.power(y - PI, 2)))
-    """
-    fig, ax = plt.subplots(1,3)
-    cs1 = ax[0].contourf(x, y, E_0)
-    cbar1 = fig.colorbar(cs1)
-    ax[0].set_xlabel('x')
-    ax[0].set_ylabel('y')
-    ax[0].set_title("Initial Condition")
-
-    #Analytic Solution
-    lambda_nm = np.sqrt((1.0/(u_0*eps_0))*(np.power(k1, 2) + np.power(k2, 2)))
-    A_n_true = (sfft.fft2(E_0))*np.exp(1j*lambda_nm*tau)
-    E_true = np.real(sfft.ifft2(A_n_true))
-    cs2 = ax[1].contourf(x, y, E_true)
-    cbar2 = fig.colorbar(cs2)
-    ax[1].set_xlabel('x')
-    ax[1].set_ylabel('y')
-    ax[1].set_title("Analytic Solution")
-    """
+    xc = np.linspace(0, L, num=N1)
+    x, y = np.meshgrid(xc, xc, indexing='ij')
     
     #Numerical Solution
     fig, ax = plt.subplots()
