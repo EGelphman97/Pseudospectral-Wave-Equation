@@ -64,7 +64,7 @@ def waveEqSolve2D(N, L, Tf):
     ik = 1j*k1
     ik1, ik2 = np.meshgrid(ik, ik, indexing='ij')#Each k needs to be a 2d array/matrix/meshgrid
     dt = 2.0*np.sqrt((u_0*eps_0)/(2*(np.max(k1)**2)))*0.1 #dt_max/10
-    omega = 1
+    omega = 1000
 
     N_t = int(Tf/dt + 0.5)#Number of time steps
     print("Number of time steps:" + str(N_t))
@@ -72,38 +72,37 @@ def waveEqSolve2D(N, L, Tf):
     x, y = np.meshgrid(xc, xc, indexing='ij')
 
     #Calculate the position-dependent wave velocity c(x,y) and source term f(x,y,t)
-    cxy = np.cos(x)*np.sin(x) + np.cos(y)*np.sin(y) + 8.0
-    fxy0 = -1.0*(((omega**2)*np.log(cxy) - 4.0*(np.cos(x)*np.sin(x) + np.cos(y)*np.sin(y))))
-    V_0 = np.zeros((N1,N2))
+    cxy = np.multiply(np.cos(x) + np.sin(x), np.cos(y) + np.sin(y)) + 8.0
+    fxy0 = -1.0*((((omega**2)*np.log(cxy)) - 2.0*np.multiply(np.cos(x) + np.sin(x), np.cos(y) + np.sin(y))))
+    #V_0 = np.zeros((N1,N2))
 
     #Set up Verlet Method
     E_oldk = sfft.fft2(fxy0)
-    E_curk = E_oldk + dt*sfft.fft2(V_0) 
+    E_curk = sfft.fft2(fxy0*np.cos(omega*dt))
     E_newk = E_newk = np.zeros((N1,N2))
 
-    for tt in np.arange(N_t):
+    for tt in np.arange(2, N_t):
         #Verlet
-        if tt > 1:
-            RHSk = spectralLaplacian(E_curk, ik1, ik2, cxy) + sfft.fft2(fxy0*np.cos(omega*tt*dt))
-            E_newk =  2.0*E_curk + (dt**2)*RHSk - E_oldk 
-            E_oldk = E_curk
-            E_curk = E_newk
+        RHSk = spectralLaplacian(E_curk, ik1, ik2, cxy) + sfft.fft2(fxy0*np.cos(omega*tt*dt))
+        E_newk =  2.0*E_curk + (dt**2)*RHSk - E_oldk
+        E_oldk = E_curk
+        E_curk = E_newk
     
     Exyt = np.real(sfft.ifft2(E_curk))
-    return Exyt
+    return np.log(cxy)
 
 def main():
     L = 2.0*PI
     N1 = N2 = 256 #Assume N1 = N2 in 2D FFT
     f1 = 1.0/(4.0*PI*np.sqrt(eps_0*u_0))
     Tf = 1.0/(PI*f1)
-    omega = 1
+    omega = 100
     xc = np.linspace(0, L, num=N1)
     x, y = np.meshgrid(xc, xc, indexing='ij')
     fig, ax = plt.subplots(1,2)
 
     #Analytic solution
-    cxy = np.cos(x)*np.sin(x) + np.cos(y)*np.sin(y) + 8.0
+    cxy = np.multiply(np.cos(x) + np.sin(x), np.cos(y) + np.sin(y)) + 8.0
     E_true = np.log(cxy)*np.cos(omega*Tf)
     cs1 = ax[0].contourf(x, y, E_true)
     cbar1 = fig.colorbar(cs1)
