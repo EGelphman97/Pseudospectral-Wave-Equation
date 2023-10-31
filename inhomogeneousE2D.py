@@ -47,7 +47,54 @@ def pointInPolygon(x,y,poly):
         p1x,p1y = p2x,p2y
     return inside
 
-def spectralLaplacian(Yk, ik1, ik2, c2):
+def spectralLaplacian6(Yk, ik1, ik2, c2):
+    """
+    Function to calculate the Laplacian u = Del*((c^2(x1,x2))Del(y(x1,x2))) in the Fourier domain
+    where Del is the two-dimensional gradient operator using Algorithm 6 from the paper "Notes on 
+    FFT Based Differentiation" by Stephen Johnson of MIT from May 2011. c^2(x1,x2) represents 
+    the square of the wave speed at location (x1,x2)
+
+    Parameters:
+        Yk: Two-dimensional Fourier transform Y(k1,k2)
+        ik1: i*Meshgrid of wave numbers for dimension 1 
+        ik2: i*Meshgrid of wave numbers for dimension 2 
+        c2: The function representing wave speed c^2(x1,x2)
+
+    Return: 
+        u: Spectral Laplacian u(x1,x2)
+    """
+    #Step 1 - Calculate Gradient of Yk in Frequency Domain
+    N1 = Yk.shape[0]
+    N2 = Yk.shape[1]
+    Yk_nrow = Yk[N1//2,:]
+    Yk_ncol = Yk[:,N2//2]
+    ik1Yk = np.multiply(ik1, Yk)
+    ik2Yk = np.multiply(ik2, Yk)
+    gn1 = np.real(sfft.ifft2(ik1Yk))
+    gn2 = np.real(sfft.ifft2(ik2Yk))
+    #Step 2 - Calculate c^2(x,y)*Del(Yk) in time domain using inverse 2D FFT
+    vn1 = np.multiply(c2, gn1)
+    vn2 = np.multiply(c2, gn2)
+    #print("Max of gn1: " + str(np.max(vn1)) + "   Max. of gn2: " + str(np.max(vn2)))
+    #Step 3 - Calculate Auxiliary arrays from saved Nyquist data
+    cmean_n2 = c2.mean(0)
+    cn1_mean = c2.mean(1).T
+    yhatrow = np.real(sfft.ifft(Yk_nrow))
+    yhatcol = np.real(sfft.ifft(Yk_ncol))
+    an1 = np.multiply(cn1_mean, yhatcol)
+    an2 = np.multiply(cmean_n2, yhatrow)
+    Ak1 = sfft.fft(an1)
+    Ak2 = sfft.fft(an2)
+    #Step 4 - Calculate Del dot Del(Yk) in frequency domain to get Spectral Laplacian
+    #using auxiliary arrays
+    Vk1 = sfft.fft2(vn1)
+    Vk2 = sfft.fft2(vn2)
+    Uk = np.multiply(ik1, Vk1) + np.multiply(ik2, Vk2) 
+    Uk[(N1//2),:] += -1.0*((N1/PI)**2)*Ak2
+    Uk[:,(N2//2)] += -1.0*((N2/PI)**2)*Ak1
+    return Uk
+
+def spectralLaplacian7(Yk, ik1, ik2, c2):
     """
     Function to calculate the Laplacian u = Del*((c^2(x1,x2))Del(y(x1,x2))) in the Fourier domain
     where Del is the two-dimensional gradient operator using Algorithm 7 from the paper "Notes on 
@@ -64,7 +111,7 @@ def spectralLaplacian(Yk, ik1, ik2, c2):
         u: Spectral Laplacian u(x1,x2)
     """
     #Step 1 - Calculate Gradient of Yk in Frequency Domain
-    gn1 = np.real(sfft.ifft2(ik1*Yk))
+    gn1 = np.real(sfft.ifft2(ik1*Yk))    
     gn2 = np.real(sfft.ifft2(ik2*Yk))
     #Step 2 - Inverse FFT to efficiently calculate c^2(x,y)*Del(Yk) in time domain
     vn1 = np.multiply(c2, gn1)
@@ -72,7 +119,7 @@ def spectralLaplacian(Yk, ik1, ik2, c2):
     #Step 3 - Calculate Del dot Del(Yk) in frequency domain to get spectral Laplacian
     Vk1 = sfft.fft2(vn1)
     Vk2 = sfft.fft2(vn2)
-    Uk = (ik1*Vk1) + (ik2*Vk2)
+    Uk = np.multiply(ik1,Vk1) + np.multiply(ik2,Vk2)
     return Uk
 
 def calcEpsxy(xmin, xmax, ymin, ymax, N, plot=False):
@@ -88,14 +135,18 @@ def calcEpsxy(xmin, xmax, ymin, ymax, N, plot=False):
             is consistent with np.meshgrid(x, y, indexing='ij'), not the default
             ordering='xy' 
     """
-    eps_3_bdy = np.array([[0.25,0.25],[1.30,0.25],[1.30,0.75],[2.75,0.75],[2.75,1.60],[4.0,1.60],[4.0,0.4],[5.1,0.4],[5.1,2.75],[3.9,2.75],[3.9,6.0],[3.5,6.0],[3.5,5.5],[2.7,5.5],[2.7,4.2],[1.25,4.2],[1.25,3.2],[0.2,3.2]])
+    eps_3_bdy = np.array([[0.25,0.25],[1.30,0.25],[1.30,0.75],[2.75,0.75],[2.75,1.60],[4.0,1.60],[4.0,0.4],[5.1,0.4],[5.1,2.75],[3.9,2.75],[3.9,6.0],[3.5,6.0],[3.5,5.5],[2.7,5.5],[2.7,4.2],[1.25,4.2],[1.25,3.2],[0.25,3.2]])
     eps_8_bdy1 = np.array([[4.4,1.5],[4.9,1.5],[4.9,2.0],[4.4,2.0]])
     eps_8_bdy2 = np.array([[5.6,0.5],[6.1,0.5],[6.1,1.0],[5.6,1.0]])
     eps_8_bdy3 = np.array([[0.5,5.6],[1.0,5.6],[1.0,6.1],[0.5,6.1]])
     eps_10_bdy = np.array([[1.7, 2.0],[2.5,2.0],[2.5,2.75],[3.1,2.75],[3.1,3.2],[1.7,3.2]])
     M = int(N/4) #Interpolate over coarser set of points
-    x = np.linspace(xmin, xmax, M)
-    y = np.linspace(ymin, ymax, M)
+    Lx = xmax - xmin
+    Ly = ymax - ymin
+    hxm = Lx/M
+    hym = Ly/M
+    x = hxm*np.arange(M)
+    y = hym*np.arange(M)
     xx, yy = np.meshgrid(x, y, indexing='ij')
     eps = np.ones((M,M))
     for i in np.arange(M):
@@ -110,22 +161,52 @@ def calcEpsxy(xmin, xmax, ymin, ymax, N, plot=False):
             elif pointInPolygon(xx[i][j], yy[i][j], eps_8_bdy2) or pointInPolygon(xx[i][j], yy[i][j], eps_8_bdy3):
                 eps[i][j] = 8.0
     epsxy = interp.RectBivariateSpline(x, y, eps)
-    xe = np.linspace(xmin, xmax, N)
-    ye = np.linspace(ymin, ymax, N)
+    hxn = Lx/N
+    hyn = Ly/N
+    xe = hxn*np.arange(N)
+    ye = hyn*np.arange(N)
+    eps_r = epsxy(xe,ye)
+    min_eps = np.min(eps_r)
+    if (min_eps < 1.0):
+        eps_r = eps_r + (1.0007 - min_eps) #eps_r = 1.0007 corresponds to eps_r of air
 
     if plot:
         x1, y1 = np.meshgrid(xe, ye, indexing='ij')
         fig, ax = plt.subplots(layout='constrained')
-        cs = ax.contourf(x1, y1, epsxy(xe,ye))
+        cs = ax.contourf(x1, y1, eps_r)
+        print(np.min(eps_r))
         cbar = fig.colorbar(cs)
+        ax.scatter([1.5*PI], [1.5*PI], marker='x', label="Source Location", color='red')
         ax.set_xlabel('x')
         ax.set_ylabel('y')
-        ax.set_title('Value of Eps_r(x,y)')
+        ax.legend()
+        ax.set_title('Value of $\epsilon _r (x,y)$')
         plt.show()
         plt.close()
-    return epsxy(xe, ye)
 
-def waveEqSolve2D(N, L, Tf):
+    #Return array that has coordinates of boundary of house
+    hg = [eps_3_bdy, eps_10_bdy, eps_8_bdy1, eps_8_bdy2, eps_8_bdy3]
+    return eps_r, hg
+
+def calcRHSk(Ek, ik1, ik2, cxy, Fk0, omega, t):
+    """
+    Function to calculate the RHS of the wave equation with source term and variable
+    wave speed in the discrete frequency domain (k-domain)
+
+    Parameters:
+        Ek: Fourier transform of E(x,y,t)
+        ik1, ik2: Matrices of discrete frequencies used in fft2
+        cxy: Position-dependent wave speed
+        Fk0: Fourier transform of f(x,y,0)
+        omega: Frequency of source term
+        t: Time step
+    """
+    #tau = (2.0*PI)/omega
+    #Ft = (np.exp(-200.0*(t - 0.25*tau))) - np.exp(-200.0*(t - 0.75*tau)) + (np.exp(-200.0*(t - 1.25*tau))) - np.exp(-200.0*(t - 1.75*tau)) + (np.exp(-200.0*(t - 2.25*tau))) - np.exp(-200.0*(t - 2.75*tau))
+    RHSk = spectralLaplacian6(Ek, ik1, ik2, cxy) + Fk0*np.sin(omega*t)
+    return RHSk
+
+def waveEqSolve2D(N, L, Tf, omega):
     """
     Function to solve the two-dimensional wave equation for a scalar version of
     the electric field E(x,y,t) the two-dimensional using the FFT based Pseudo-
@@ -134,7 +215,8 @@ def waveEqSolve2D(N, L, Tf):
     Parameters:
         N : Square root of 2D FFT Size
         L: Length of One Side of Rectangle
-        Tf: Final time value of numerical solution, in seconds        
+        Tf: Final time value of numerical solution, in seconds
+        omega: Oscillation frequency of source term       
 
     Return:
         Exyt: Value of x-component of E(x,y,t) field at time t=T_f
@@ -146,66 +228,90 @@ def waveEqSolve2D(N, L, Tf):
     k1 =  np.concatenate((k_pos, k_neg))
     ik = 1j*k1
     ik1, ik2 = np.meshgrid(ik, ik, indexing='ij')#Each k needs to be a 2d array/matrix/meshgrid
-    dt = 2.0*np.sqrt((u_0*eps_0)/(2*(np.max(k1)**2)))*0.1 #dt_max/10
-    omega = 10e6
+    xc = h*np.arange(N1)
+    x, y = np.meshgrid(xc, xc, indexing='ij')
 
+    #Calculate the position-dependent wave velocity c(x,y) and source term f(x,y,t)
+    eps_r, hg = calcEpsxy(0, 2*PI, 0, 2*PI, N)
+    c2xy = 1.0/(u_0*eps_0*eps_r)
+    dt = 1.0*np.sqrt(u_0*eps_0*np.min(eps_r)/(2.0*(np.max(k1)**2)), dtype="double") #dt_max/5
     N_t = int(Tf/dt + 0.5)#Number of time steps
     print("Number of time steps:" + str(N_t))
-    xc = np.linspace(0, L, num=N1)
-    x, y = np.meshgrid(xc, xc, indexing='ij')
-    E_0 = np.exp(-10.0*(np.power(x - ((3.0*PI)/2.0), 2) + np.power(y - ((3.0*PI)/2.0), 2)))
-
-    #Calculate square of position-dependent wave velocity c^2(x,y)
-    eps = calcEpsxy(0, L, 0, L, N1)#Calculate eps(x,y)
-    eps = (eps - np.min(eps)) + 1.0
-    c2xy = 1.0/(u_0*eps_0*eps)
+    fxy0 = 50.0*np.exp(-1.0*(np.power(x - 1.5*PI,2) + np.power(y - 1.5*PI,2)), dtype="double")
+    Fk0 = sfft.fft2(fxy0)
 
     #Set up Verlet Method
-    E_oldk = sfft.fft2(E_0)
-    E_curk = sfft.fft2(E_0*np.cos(omega*dt))
-    E_newk = np.zeros((N1,N2))
+    Ak = Vk = Aknew = Vknew = np.zeros((N1,N2), dtype="double")
 
-    for tt in np.arange(2, N_t):
+    #Set up RK3 Method
+    E1k = E2k = E1newk = E2newk = np.zeros((N1,N2), dtype="double")
+
+    for tt in np.arange(1, N_t):
         #Verlet
-        RHSk = spectralLaplacian(E_curk, ik1, ik2, c2xy) + sfft.fft2(E_0*np.cos(omega*tt*dt))
-        E_newk =  2.0*E_curk + (dt**2)*RHSk - E_oldk
-        E_oldk = E_curk
-        E_curk = E_newk
+        RHSk = calcRHSk(Ak, ik1, ik2, c2xy, Fk0, omega, tt*dt)
+        Vknew = Vk + dt*RHSk
+        Vk = Vknew
+        Aknew = Ak + dt*Vk
+        Ak =  Aknew
+        #print("Ak_max: " + str(np.max(Ak)) + "   Vk_max: " + str(np.max(Vk)))
 
-        if tt % 200 == 0:
-            fig,ax = plt.subplots()
-            cs3 = ax.contourf(x, y, np.real(sfft.ifft2(E_curk)), levels=np.linspace(-0.7,2.0, 100))
-            ax.scatter([1.5*PI], [1.5*PI], marker='x', label="Source Location", color='red')
-            cbar3 = fig.colorbar(cs3, ticks=np.linspace(-0.7,2.0, num=8))
-            ax.set_xlabel('x')
-            ax.set_ylabel('y')
-            ax.set_title("Numerical Solution of E(x,y,t) at t = " + str(tt*dt))
-            plt.savefig(f"numerical_sol{tt}.jpg")
-            ax.legend()
+        #RK3
+        K11 = E2k
+        K12 = calcRHSk(E1k, ik1, ik2, c2xy, Fk0, omega, tt*dt)
+        K21 = E2k + 0.5*dt*K12
+        K22 = calcRHSk(E1k + 0.5*dt*K11, ik1, ik2, c2xy, Fk0, omega, tt*dt)
+        K31 = E2k - dt*K12 + 2.0*dt*K22
+        K32 = calcRHSk(E1k - dt*K11 + 2.0*dt*K21, ik1, ik2, c2xy, Fk0, omega, tt*dt)
+        E1newk = E1k + (dt/6.0)*(K11 + 4.0*K21 + K31)
+        E2newk = E2k + (dt/6.0)*(K12 + 4.0*K22 + K32)
+        #Increment time step
+        E1k = E1newk
+        E2k = E2newk
+
+        if tt % 250 == 0:
+            print("Time Step " + str(tt))
     
-    Exyt = np.real(sfft.ifft2(E_curk))
-    return Exyt
+    ExytRK3 = np.real(sfft.ifft2(E1k))
+    ExytV = np.real(sfft.ifft2(Ak))
+    print("Verlet max.: " + str(np.max(ExytV)) + "   RK3 max.: " + str(np.max(ExytRK3)))
+
+    return ExytRK3, ExytV, hg
 
 def main():
     L = 2.0*PI
-    N1 = N2 = 256 #Assume N1 = N2 in 2D FFT
-    f1 = 1.0/(4.0*PI*np.sqrt(eps_0*u_0))
-    Tf = 1.0/(PI*f1)
-
-    #Initial Condition
-    xc = np.linspace(0, L, num=N1)
+    N1 = N2 = 64 #Assume N1 = N2 in 2D FFT
+    omega = 2.0*PI*1e5
+    Tf = 1.0*((2.0*PI)/omega)
+    h = L/N1
+    xc = h*np.arange(N1)
     x, y = np.meshgrid(xc, xc, indexing='ij')
     
-    #Numerical Solution
-    fig, ax = plt.subplots()
-    En = waveEqSolve2D(N1, L, Tf)
-    cs3 = ax.contourf(x, y, En)
-    ax.scatter([1.5*PI], [1.5*PI], marker='x', label="Source Location", color='red')
-    cbar3 = fig.colorbar(cs3)
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_title("Numerical Solution")
-    ax.legend()
+    #Calculate Solution using Verlet and RK3
+    fig, ax = plt.subplots(1,2)
+    EnRK3, EnV, hg = waveEqSolve2D(N1, L, Tf, omega)
+    print(hg)
+    cs = ax[0].contourf(x, y, EnV)
+    ax[0].scatter([1.5*PI], [1.5*PI], marker='x', label="Source Location", color='red')
+    for shp in hg:
+        shp1 = np.concatenate((shp, [shp[0]]))
+        ax[0].plot(shp1[:,0], shp1[:,1], color='black')
+    cbar = fig.colorbar(cs)
+    ax[0].set_xlabel('x')
+    ax[0].set_ylabel('y')
+    ax[0].set_title("Numerical Solution - Verlet")
+    ax[0].legend()
+    cs1 = ax[1].contourf(x, y, EnRK3)
+    ax[1].scatter([1.5*PI], [1.5*PI], marker='x', label="Source Location", color='red')
+    for shp in hg:
+        shp1 = np.concatenate((shp, [shp[0]]))
+        ax[1].plot(shp1[:,0], shp1[:,1], color='black')
+    cbar1 = fig.colorbar(cs1)
+    ax[1].set_xlabel('x')
+    ax[1].set_ylabel('y')
+    ax[1].set_title("Numerical Solution - RK3")
+    ax[1].legend()
+
+    plt.suptitle("Numerical Solution of Wave Equation With Source")
     plt.show()
 
 if __name__ == "__main__":
