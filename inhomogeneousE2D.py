@@ -202,8 +202,8 @@ def calcRHSk(Ek, ik1, ik2, cxy, Fk0, omega, t):
         t: Time step
     """
     #tau = (2.0*PI)/omega
-    #Ft = (np.exp(-200.0*(t - 0.25*tau))) - np.exp(-200.0*(t - 0.75*tau)) + (np.exp(-200.0*(t - 1.25*tau))) - np.exp(-200.0*(t - 1.75*tau)) + (np.exp(-200.0*(t - 2.25*tau))) - np.exp(-200.0*(t - 2.75*tau))
-    RHSk = spectralLaplacian6(Ek, ik1, ik2, cxy) + Fk0*np.sin(omega*t)
+    #Ft = (np.exp(-200.0*((t - 0.25*tau)**2))) - np.exp(-200.0*((t - 0.75*tau)**2)) + (np.exp(-200.0*((t - 1.25*tau)**2))) - np.exp(-200.0*((t - 1.75*tau)**2)) + (np.exp(-200.0*((t - 2.25*tau)**2))) - np.exp(-200.0*((t - 2.75*tau)**2))
+    RHSk = spectralLaplacian6(Ek, ik1, ik2, cxy) + Fk0*(np.sin(omega*t) + np.sin(2.0*PI*5.0e9*t))
     return RHSk
 
 def waveEqSolve2D(N, L, Tf, omega):
@@ -234,7 +234,7 @@ def waveEqSolve2D(N, L, Tf, omega):
     #Calculate the position-dependent wave velocity c(x,y) and source term f(x,y,t)
     eps_r, hg = calcEpsxy(0, 2*PI, 0, 2*PI, N)
     c2xy = 1.0/(u_0*eps_0*eps_r)
-    dt = 1.0*np.sqrt(u_0*eps_0*np.min(eps_r)/(2.0*(np.max(k1)**2)), dtype="double") #dt_max/5
+    dt = 0.05*np.sqrt(u_0*eps_0*np.min(eps_r)/(2.0*(np.max(k1)**2)), dtype="double") #dt_max/5
     N_t = int(Tf/dt + 0.5)#Number of time steps
     print("Number of time steps:" + str(N_t))
     fxy0 = 50.0*np.exp(-1.0*(np.power(x - 1.5*PI,2) + np.power(y - 1.5*PI,2)), dtype="double")
@@ -253,7 +253,6 @@ def waveEqSolve2D(N, L, Tf, omega):
         Vk = Vknew
         Aknew = Ak + dt*Vk
         Ak =  Aknew
-        #print("Ak_max: " + str(np.max(Ak)) + "   Vk_max: " + str(np.max(Vk)))
 
         #RK3
         K11 = E2k
@@ -273,15 +272,14 @@ def waveEqSolve2D(N, L, Tf, omega):
     
     ExytRK3 = np.real(sfft.ifft2(E1k))
     ExytV = np.real(sfft.ifft2(Ak))
-    print("Verlet max.: " + str(np.max(ExytV)) + "   RK3 max.: " + str(np.max(ExytRK3)))
 
     return ExytRK3, ExytV, hg
 
 def main():
     L = 2.0*PI
-    N1 = N2 = 64 #Assume N1 = N2 in 2D FFT
-    omega = 2.0*PI*1e5
-    Tf = 1.0*((2.0*PI)/omega)
+    N1 = N2 = 512 #Assume N1 = N2 in 2D FFT
+    omega = 2.0*PI*2.4e9
+    Tf = 3.0*((2.0*PI)/omega)
     h = L/N1
     xc = h*np.arange(N1)
     x, y = np.meshgrid(xc, xc, indexing='ij')
@@ -289,7 +287,6 @@ def main():
     #Calculate Solution using Verlet and RK3
     fig, ax = plt.subplots(1,2)
     EnRK3, EnV, hg = waveEqSolve2D(N1, L, Tf, omega)
-    print(hg)
     cs = ax[0].contourf(x, y, EnV)
     ax[0].scatter([1.5*PI], [1.5*PI], marker='x', label="Source Location", color='red')
     for shp in hg:

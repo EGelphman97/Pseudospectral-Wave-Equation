@@ -94,13 +94,13 @@ def waveEqSolve2D(N, L, f1):
     k1 =  np.concatenate((k_pos, k_neg))
     ik = 1j*k1
     ik1, ik2 = np.meshgrid(ik, ik, indexing='ij')#Each k needs to be a 2d array/matrix/meshgrid
-    dt = 2.0*np.sqrt((u_0*eps_0)/(2*(np.max(k1)**2)))*0.1 #dt_max/10
+    dt = 0.3*np.sqrt((u_0*eps_0)/(2.0*(np.max(k1)**2)))*0.1 #dt_max/5
 
-    T_f = 0.01/(PI*f1)
+    T_f = 1.0/(PI*f1)
     N_t = int(T_f/dt)
     print("Number of time steps:" + str(N_t))
-    xc = h*np.arange(N1) + 0.5*h
-    yc = h*np.arange(N2) + 0.5*h
+    xc = h*np.arange(N1) 
+    yc = h*np.arange(N2) 
     x, y = np.meshgrid(xc, yc, indexing='ij')
     E_0 = np.exp(-10.0*(np.power(x - PI, 2) + np.power(y - PI, 2)))
     V_0 = np.zeros((N1,N2))
@@ -109,21 +109,23 @@ def waveEqSolve2D(N, L, f1):
     c2xy = 1.0/(u_0*eps_0*eps)
 
     #Set up Verlet Method
-    E_oldk = sfft.fft2(E_0)
-    E_curk = E_oldk + dt*sfft.fft2(V_0)
-    E_newk = E_newk = np.zeros((N1,N2))
-
-    #q2 = ((dt**2)/(u_0*eps_0))*(np.power(k1, 2) + np.power(k2, 2))
+    Ak = sfft.fft2(E_0)
+    Vk = sfft.fft2(V_0)
+    Aknew = Vknew = np.zeros((N1,N2))
 
     for tt in np.arange(N_t):
         #Verlet
         if tt > 1:
-            RHSk = spectralLaplacian(E_curk, ik1, ik2, c2xy)
-            E_newk =  2.0*E_curk + (dt**2)*RHSk - E_oldk
-            E_oldk = E_curk
-            E_curk = E_newk
+            RHSk = spectralLaplacian(Ak, ik1, ik2, c2xy)
+            Vknew = Vk + dt*RHSk
+            Vk = Vknew
+            Aknew = Ak + dt*Vk
+            Ak =  Aknew
+
+        if tt % 500 == 0:
+            print("Time step: " + str(tt))
     
-    Exyt = np.real(sfft.ifft2(E_curk))
+    Exyt = np.real(sfft.ifft2(Ak))
     return Exyt
 
 def main():
@@ -135,37 +137,32 @@ def main():
     kk = np.concatenate((k_pos, k_neg))
     k1, k2 = np.meshgrid(kk,kk, indexing='ij')
     f1 = 1.0/(4.0*PI*np.sqrt(eps_0*u_0))
-    tau = 0.01/(PI*f1)
+    tau = 1.0/(PI*f1)
 
     #Initial Condition
-    xc = h*np.arange(N1) + 0.5*h
-    yc = h*np.arange(N2) + 0.5*h
+    xc = h*np.arange(N1) 
+    yc = h*np.arange(N2) 
     x, y = np.meshgrid(xc, yc, indexing='ij')
     E_0 = np.exp(-10.0*(np.power(x - PI, 2) + np.power(y - PI, 2)))
-    fig, ax = plt.subplots(1,3)
-    cs1 = ax[0].contourf(x, y, E_0)
-    cbar1 = fig.colorbar(cs1)
-    ax[0].set_xlabel('x')
-    ax[0].set_ylabel('y')
-    ax[0].set_title("Initial Condition")
+    fig, ax = plt.subplots(1,2)
 
     #Analytic Solution
     lambda_nm = np.sqrt((1.0/(u_0*eps_0))*(np.power(k1, 2) + np.power(k2, 2)))
     A_n_true = (sfft.fft2(E_0))*np.exp(1j*lambda_nm*tau)
     E_true = np.real(sfft.ifft2(A_n_true))
-    cs2 = ax[1].contourf(x, y, E_true)
+    cs2 = ax[0].contourf(x, y, E_true)
     cbar2 = fig.colorbar(cs2)
-    ax[1].set_xlabel('x')
-    ax[1].set_ylabel('y')
-    ax[1].set_title("Analytic Solution")
+    ax[0].set_xlabel('x')
+    ax[0].set_ylabel('y')
+    ax[0].set_title("Analytic Solution")
     
     #Numerical Solution
     En = waveEqSolve2D(N1, L, f1)
-    cs3 = ax[2].contourf(x, y, En)
+    cs3 = ax[1].contourf(x, y, En)
     cbar3 = fig.colorbar(cs3)
-    ax[2].set_xlabel('x')
-    ax[2].set_ylabel('y')
-    ax[2].set_title("Numerical Solution")
+    ax[1].set_xlabel('x')
+    ax[1].set_ylabel('y')
+    ax[1].set_title("Numerical Solution")
 
     plt.suptitle('Electric Field E(x,y,Tf)')
     plt.show()
