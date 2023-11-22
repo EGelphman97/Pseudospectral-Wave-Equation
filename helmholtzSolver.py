@@ -6,6 +6,9 @@ from scipy.sparse.linalg import spsolve
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import pdist
 import pymeshfix as mf
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize
+from mpl_toolkits.mplot3d import Axes3D
 
 def cartestian2Spherical(xyz):
     """
@@ -130,13 +133,54 @@ def generateSMSparse(vert_arr, tri_arr, omega):
     M = csc_matrix((np.array(V_M, dtype=np.double), (np.array(I, dtype=int),np.array(J, dtype=int))), shape=(N_v, N_v), dtype=np.double)
     return S,M
 
+def plotSolution(V,u_fem, X, Y, Z, sourceIdx):
+
+    fig = plt.figure(figsize=(12, 8))
+
+    combined_min = np.min(u_fem)
+    combined_max = np.max(u_fem)
+    common_norm = Normalize(vmin=combined_min, vmax=combined_max)
+
+    # Plot numerical solution with source marked as 'X'
+    ax1 = fig.add_subplot(1, 1, 1, projection='3d')
+    scatter1 = ax1.scatter(X, Y, Z, c=u_fem, cmap='turbo', norm=common_norm)
+    print("Coordinates of Source: (" + str(V[sourceIdx][0]) + "," + str(V[sourceIdx][1]) + "," + str(V[sourceIdx][1]) + ")")
+    ax1.text(V[sourceIdx,0],V[sourceIdx,1],V[sourceIdx,2],  '%s' % ("Source"), size=20, zorder=1, color='k')
+    fig.colorbar(ScalarMappable(norm=common_norm, cmap='turbo'), ax=ax1, orientation='horizontal')
+    ax1.set_title(f"Numerical Solution")
+    ax1.set_xlabel('x')
+    ax1.set_ylabel('y')
+    ax1.set_zlabel('z')
+    plt.savefig(f"numerical_solution_bunny.png")
+    plt.show()
+
+def solveBunny(omega):
+    mesh_bun_holes = pv.examples.download_bunny().triangulate()
+    mesh_bun = mf.MeshFix(mesh_bun_holes)
+    mesh_bun.repair(verbose=True)
+    meshb = mesh_bun.mesh
+    #meshb['scalars'] = [np.linalg.norm(pt) for pt in meshb.points]
+    #meshb.plot()
+    V = 10.0*meshb.points
+    T = meshb.faces.reshape((-1,4))[:,1:]
+    S,M = generateSMSparse(V,T, omega)#Generate sparse FEM stiffness and mass matrices
+    f = np.zeros(V.shape[0])
+    diracDeltaIdx = np.random.randint(low=0,high=V.shape[0])
+    f[diracDeltaIdx] = 2.0
+    epsilon = 1.0e-8
+    A = S + (epsilon*identity(V.shape[0], dtype=np.double, format="csc"))
+    b = M.dot(f)
+    u = spsolve(A,b)
+    plotSolution(V, u, V[:,0],V[:,1],V[:,2], diracDeltaIdx)
+
 def main():
+    """
     #Manfactured solution
     h = []
     L2 = []
     idx = 0
     prev_p_dist = 1e15
-    omega = 10.0*np.pi
+    omega = 2.0*np.pi
     while len(h) < 6:
         N = idx
         V,T = icosphere(N)#Generate array of verticies/triangles using icosphere package
@@ -149,8 +193,6 @@ def main():
             prev_p_dist = p_dist
             appended = True
         S,M = generateSMSparse(V,T, omega)#Generate sparse FEM stiffness and mass matrices
-        plt.spy(S)
-        plt.show()
         rthph = cartestian2Spherical(V)#Convert vertex (x,y,z) cartesian coordinates to spherica (r,theta,phi)
         u_true = np.cos(rthph[:,2])
         f = ((omega**2) - 2.0)*np.cos(rthph[:,2])
@@ -160,15 +202,19 @@ def main():
         u_FEM = spsolve(A,b)
         u = u_true - u_FEM
         if appended:
-            L2.append(np.sqrt(np.dot(u, M.dot(u))))#Calculate L^2 norm of error
-            print("Smallest Edge Length: " + str(h[-1]) + " L^2 norm of error: " + str(L2[-1]))
+            L2rel = np.sqrt(np.dot(u, M.dot(u)))/np.sqrt(np.dot(u_true, M.dot(u_true)))
+            L2.append(L2rel)#Calculate L^2 norm of error
+            print("Smallest Edge Length: " + str(h[-1]) + " L^2 norm of Relative Error: " + str(L2[-1]))
         idx += 1
 
     plt.loglog(h, L2)
     plt.xlabel("Log(Smallest Edge Length)")
-    plt.ylabel("Log(||u_true - u_FEM||_2)")
-    plt.title("Log-Log Plot of L^2 Norm of Error vs. Smallest Edge Length")
+    plt.ylabel("Log(||u_true - u_FEM||_2/||u_true||_2)")
+    plt.title("Log-Log Plot of L^2 Norm of Relative Error vs. Smallest Edge Length")
     plt.show()
+    """
+    omega = 2.0*np.pi
+    solveBunny(omega)
 
 if __name__ == "__main__":
     main()
