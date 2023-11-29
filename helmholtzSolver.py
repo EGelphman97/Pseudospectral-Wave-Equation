@@ -66,36 +66,8 @@ def generateLocalSMN(vert_arr, tri_arr, k, omega):
                                      [np.dot(E2,E1),np.dot(E2,E2), np.dot(E2,E3)],
                                      [np.dot(E3,E1),np.dot(E3,E2), np.dot(E3,E3)]], dtype=np.double)
         Mk = (A/12.0)*np.array([[2,1,1],[1,2,1],[1,1,2]], dtype=np.double)
-        Nk = (omega**2)*(A/12.0)*np.array([[2,1,1],[1,2,1],[1,1,2]], dtype=np.double)
+        Nk = -1.0*(omega**2)*(A/12.0)*np.array([[2,1,1],[1,2,1],[1,1,2]], dtype=np.double)
     return k_arr, (-1.0*Sk), Mk, Nk
-
-"""
-def generateSM(vert_arr, tri_arr):
-    Function to generate the stiffness(S) and mass (M) matrices
-    In a finite element solver
-
-    Parameters:
-        vert_arr: N_v x 3 array of (x,y,z) coordinates of verticies. N_v is the
-                  number of verticies
-        tri_arr: N_t x 3 array of integer "vertex" coordinates corresponding
-                 to the 3 verticies of each FEM triangle. N_t is the number of 
-                 triangles
-
-    Return:
-        S: N_v x N_v Stiffness matrix  
-        M: N_v x N_v Mass matrix sparse 
-    N_v = vert_arr.shape[0]
-    S = np.zeros((N_v,N_v), dtype=np.double)
-    M = np.zeros((N_v,N_v), dtype=np.double)
-    for k in np.arange(tri_arr.shape[0]):
-        #V_S = V_M = I = J = [] 
-        k_arr, Sk, Mk = generateLocalSM(vert_arr, tri_arr, k)
-        for i in np.arange(3):
-            for j in np.arange(3):
-                S[k_arr[i]][k_arr[j]] += Sk[i][j]
-                M[k_arr[i]][k_arr[j]] += Mk[i][j]
-    return S,M
-    """
 
 def generateSMSparse(vert_arr, tri_arr, omega):
     """
@@ -133,45 +105,100 @@ def generateSMSparse(vert_arr, tri_arr, omega):
     M = csc_matrix((np.array(V_M, dtype=np.double), (np.array(I, dtype=int),np.array(J, dtype=int))), shape=(N_v, N_v), dtype=np.double)
     return S,M
 
-def plotSolution(V,u_fem, X, Y, Z, sourceIdx):
+def plotSolution(V, faces, u_fem, source_idx1, source_idx2):
+    # Create a PyVista mesh object
+    mesh = pv.PolyData(V, faces)
+    mesh['u_fem'] = u_fem  # Add your data to the mesh
 
-    fig = plt.figure(figsize=(12, 8))
+    # Create plotting object and add the mesh
+    plotter = pv.Plotter()
+    plotter.add_mesh(mesh, scalars='u_fem', cmap='jet', show_edges=False)
 
-    combined_min = np.min(u_fem)
-    combined_max = np.max(u_fem)
-    common_norm = Normalize(vmin=combined_min, vmax=combined_max)
+    # Highlight the source location with a larger, red sphere
+    # Source 1:  [-0.53876001  1.26919001  0.361236  ]
+    # Source 2:  [-0.77993497  1.71503007 -0.37948798]
 
-    # Plot numerical solution with source marked as 'X'
-    ax1 = fig.add_subplot(1, 1, 1, projection='3d')
-    scatter1 = ax1.scatter(X, Y, Z, c=u_fem, cmap='turbo', norm=common_norm)
-    print("Coordinates of Source: (" + str(V[sourceIdx][0]) + "," + str(V[sourceIdx][1]) + "," + str(V[sourceIdx][1]) + ")")
-    ax1.text(V[sourceIdx,0],V[sourceIdx,1],V[sourceIdx,2],  '%s' % ("Source"), size=20, zorder=1, color='k')
-    fig.colorbar(ScalarMappable(norm=common_norm, cmap='turbo'), ax=ax1, orientation='horizontal')
-    ax1.set_title(f"Numerical Solution")
-    ax1.set_xlabel('x')
-    ax1.set_ylabel('y')
-    ax1.set_zlabel('z')
-    plt.savefig(f"numerical_solution_bunny.png")
-    plt.show()
+    source_sphere = pv.Sphere(radius=0.05, center=V[source_idx1])
+    source_sphere2 = pv.Sphere(radius=0.05, center=V[source_idx2])
+    plotter.add_mesh(source_sphere, color='red')
+    plotter.add_mesh(source_sphere2, color='k')
 
-def solveBunny(omega):
+    # Adjust camera position and zoom
+    # plotter.view_isometric()
+
+    plotter.camera_position = [0.5,  1.2,  0.5]
+    plotter.camera.zoom(1.2)
+
+    # Show the plotter
+    # Add the legend with specified font size
+    plotter.add_legend(labels=[('Source 1', 'red'), ('Source 2', 'black')], size=(0.1, 0.1))
+
+    plotter.show()
+
+"""
+For comparison I fixed the source locations
+Source 1 position in V:  [-0.62496699  1.49081007 -0.13576   ] Index 12816
+Source 2 positipn in V:  [-0.34508102  0.83202504  0.425625  ] Index 4238
+"""
+def solveBunny_DiracSrc(omega):
     mesh_bun_holes = pv.examples.download_bunny().triangulate()
     mesh_bun = mf.MeshFix(mesh_bun_holes)
     mesh_bun.repair(verbose=True)
     meshb = mesh_bun.mesh
-    #meshb['scalars'] = [np.linalg.norm(pt) for pt in meshb.points]
-    #meshb.plot()
     V = 10.0*meshb.points
     T = meshb.faces.reshape((-1,4))[:,1:]
     S,M = generateSMSparse(V,T, omega)#Generate sparse FEM stiffness and mass matrices
+    # PyVista requires faces to start with the number of points in each face
+    faces = np.hstack((np.full((T.shape[0], 1), 3, dtype=T.dtype), T)).ravel()
     f = np.zeros(V.shape[0])
-    diracDeltaIdx = np.random.randint(low=0,high=V.shape[0])
-    f[diracDeltaIdx] = 2.0
+    diracDeltaIdx1 = 12816 #np.random.randint(low=0,high=V.shape[0])
+    f[diracDeltaIdx1] = 2.0
+    diracDeltaIdx2 = 4238 #np.random.randint(low=0,high=V.shape[0])
+    f[diracDeltaIdx2] = 2.0
+    
+    print("Source 1 position in V: ", V[diracDeltaIdx1], "Index", diracDeltaIdx1)
+    print("Source 2 positipn in V: ", V[diracDeltaIdx2], "Index", diracDeltaIdx2)
+
     epsilon = 1.0e-8
     A = S + (epsilon*identity(V.shape[0], dtype=np.double, format="csc"))
     b = M.dot(f)
     u = spsolve(A,b)
-    plotSolution(V, u, V[:,0],V[:,1],V[:,2], diracDeltaIdx)
+    plotSolution(V, faces, u, diracDeltaIdx1, diracDeltaIdx2)
+
+def gaussian_source(position, center, exp10):
+    """
+    Compute the Gaussian value at a given position.
+    exp10: Scaling factor for the Gaussian.
+    """
+    x, y, z = position - center
+    return exp10 * np.exp(-(x**2 + y**2 + z**2))
+
+def solveBunny_DiracGaussSrc(omega):
+    mesh_bun_holes = pv.examples.download_bunny().triangulate()
+    mesh_bun = mf.MeshFix(mesh_bun_holes)
+    mesh_bun.repair(verbose=True)
+    meshb = mesh_bun.mesh
+    V = 10.0*meshb.points
+    T = meshb.faces.reshape((-1,4))[:,1:]
+    S,M = generateSMSparse(V,T, omega)#Generate sparse FEM stiffness and mass matrices
+    # PyVista requires faces to start with the number of points in each face
+    faces = np.hstack((np.full((T.shape[0], 1), 3, dtype=T.dtype), T)).ravel()
+    f = np.zeros(V.shape[0])
+    diracDeltaIdx1 = 12816 #np.random.randint(low=0,high=V.shape[0])
+    gaussianCenterIdx = 4238 #np.random.randint(low=0, high=V.shape[0])
+
+    f[diracDeltaIdx1] = 2.0
+    for i in range(V.shape[0]):
+        f[i] += gaussian_source(V[i], V[gaussianCenterIdx], exp10=10.0)
+
+    print("Source 1 position in V: ", V[diracDeltaIdx1], "Index", diracDeltaIdx1)
+    print("Source 2 positipn in V: ", V[gaussianCenterIdx], "Index", gaussianCenterIdx)
+
+    epsilon = 1.0e-8
+    A = S + (epsilon*identity(V.shape[0], dtype=np.double, format="csc"))
+    b = M.dot(f)
+    u = spsolve(A,b)
+    plotSolution(V, faces, u, diracDeltaIdx1, gaussianCenterIdx)
 
 def main():
     """
@@ -180,7 +207,7 @@ def main():
     L2 = []
     idx = 0
     prev_p_dist = 1e15
-    omega = 2.0*np.pi
+    omega = 20000.0*np.pi
     while len(h) < 6:
         N = idx
         V,T = icosphere(N)#Generate array of verticies/triangles using icosphere package
@@ -195,7 +222,7 @@ def main():
         S,M = generateSMSparse(V,T, omega)#Generate sparse FEM stiffness and mass matrices
         rthph = cartestian2Spherical(V)#Convert vertex (x,y,z) cartesian coordinates to spherica (r,theta,phi)
         u_true = np.cos(rthph[:,2])
-        f = ((omega**2) - 2.0)*np.cos(rthph[:,2])
+        f = (-(omega**2) - 2.0)*np.cos(rthph[:,2])
         epsilon = 1.0e-8
         A = S + (epsilon*identity(N_v, dtype=np.double, format="csc"))
         b = M.dot(f)
@@ -213,8 +240,9 @@ def main():
     plt.title("Log-Log Plot of L^2 Norm of Relative Error vs. Smallest Edge Length")
     plt.show()
     """
-    omega = 2.0*np.pi
-    solveBunny(omega)
+    omega = (10000.0)*2.0*np.pi
+    solveBunny_DiracSrc(omega)
+    solveBunny_DiracGaussSrc(omega)
 
 if __name__ == "__main__":
     main()
